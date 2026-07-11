@@ -1,0 +1,13 @@
+{
+  "name": "usage-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Localhost daemon that owns usage polling for the GNOME usage extensions. Framework + runner; each provider is a plugin (ollama first).",
+  "type": "module",
+  "bin": { "usage-daemon": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}

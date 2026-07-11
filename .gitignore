@@ -1,0 +1,10 @@
+# Internal notes / handoffs — never commit
+*.internal.md
+
+# runtime
+node_modules/
+*.cookie
+config.toml
+
+# editor/local
+.claude/

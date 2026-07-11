@@ -1,0 +1,14 @@
+# usage-daemon config — copy to ~/.config/usage-daemon/config.toml
+# The daemon binds 127.0.0.1 only.
+
+port = 8787
+
+[providers.ollama]
+enabled = true
+interval_seconds = 300
+# Ollama's website auths on the browser SESSION COOKIE, not the API key.
+# Copy it from DevTools -> Application -> Cookies -> ollama.com (the whole
+# "name=value; name2=value2" cookie header), into this file:
+cookie_file = "~/.config/usage-daemon/ollama.cookie"
+# ...or inline instead of a file:
+# cookie = "session=...; other=..."

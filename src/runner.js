@@ -3,6 +3,8 @@
 // keeps the last-known snapshot per provider (fail-soft: errors mark stale, never
 // blank).
 
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import * as store from './store.js';
 import { willDeplete } from './burnrate.js';
 
@@ -19,8 +21,29 @@ export class Runner {
     this.current = new Map(); // name -> snapshot
   }
 
-  add(provider) {
-    this.providers.set(provider.name, { provider, timer: null });
+  add(provider, meta = {}) {
+    this.providers.set(provider.name, {
+      provider,
+      timer: null,
+      cookieFile: meta.cookieFile ?? null,
+    });
+  }
+
+  // Persist a session cookie for a provider (daemon stays the owner: it holds,
+  // writes, and uses it), reconfigure the plugin, then poll immediately. Lets a
+  // client (the extension prefs) supply the cookie without the daemon ever
+  // handing it back out. Returns the fresh snapshot.
+  async setCookie(name, cookie) {
+    const entry = this.providers.get(name);
+    if (!entry) throw new Error(`unknown provider: ${name}`);
+    const value = String(cookie ?? '').trim();
+    if (!value) throw new Error('empty cookie');
+    if (entry.cookieFile) {
+      await fs.mkdir(path.dirname(entry.cookieFile), { recursive: true });
+      await fs.writeFile(entry.cookieFile, value + '\n', { mode: 0o600 });
+    }
+    entry.provider.configure?.({ cookie: value });
+    return this.poll(name);
   }
 
   list() {

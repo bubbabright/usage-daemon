@@ -28,7 +28,23 @@ enabled at 300s but no cookie → it reports `auth_expired` and keeps last-known
 | GET | `/usage/{provider}/current` | normalized snapshot (below) |
 | GET | `/usage/{provider}/history` | history rows `{t, session, weekly, tier}` |
 | POST | `/usage/{provider}/refresh` | force an immediate poll, return snapshot |
+| POST | `/usage/{provider}/cookie` | store the session cookie (daemon owns it), re-poll |
 | GET | `/?provider={name}` | self-contained HTML report (fetches history live) |
+
+### Supplying the cookie
+
+Ollama's website auths on the browser **session cookie** (not the API key). Two ways
+to give it to the daemon — either way the **daemon owns it** (holds, persists to
+`cookie_file` at mode `0600`, and uses it; it is never returned by any endpoint):
+
+- **File:** paste it into the `cookie_file` from `config.toml` and restart.
+- **Endpoint** (what the GNOME extension prefs uses): `POST /usage/ollama/cookie`
+  with the cookie as `text/plain` or `{"cookie":"..."}` JSON. The daemon writes it to
+  `cookie_file` and immediately re-polls. Localhost only.
+
+```bash
+curl -X POST --data 'session=...; other=...' 127.0.0.1:8787/usage/ollama/cookie
+```
 
 ### Snapshot (the daemon↔client contract)
 

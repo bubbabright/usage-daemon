@@ -3,10 +3,13 @@
 //   GET  /usage/:provider/current    -> A2 snapshot
 //   GET  /usage/:provider/history    -> history rows
 //   POST /usage/:provider/refresh    -> force an immediate poll, return snapshot
+//   POST /usage/:provider/cookie     -> store session cookie (daemon owns it), re-poll
 //   GET  /?provider=ollama           -> self-contained HTML report
 
 import http from 'node:http';
 import { reportHtml } from './report.js';
+
+const MAX_BODY = 64 * 1024; // cookies are small; cap to avoid unbounded reads
 
 function json(res, code, body) {
   const s = JSON.stringify(body);
@@ -15,6 +18,33 @@ function json(res, code, body) {
     'content-length': Buffer.byteLength(s),
   });
   res.end(s);
+}
+
+// Read a bounded request body. Accepts JSON {"cookie":"..."} or raw text/plain.
+function readCookieBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > MAX_BODY) {
+        reject(new Error('body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      const ct = req.headers['content-type'] || '';
+      if (ct.includes('application/json')) {
+        try {
+          resolve(String(JSON.parse(data).cookie ?? '').trim());
+        } catch {
+          reject(new Error('invalid JSON body'));
+        }
+      } else {
+        resolve(data.trim());
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 export function createServer(runner) {
@@ -59,6 +89,13 @@ export function createServer(runner) {
         }
         if (provider && action === 'refresh' && method === 'POST') {
           const snap = await runner.poll(provider);
+          return json(res, 200, snap);
+        }
+        if (provider && action === 'cookie' && method === 'POST') {
+          const cookie = await readCookieBody(req);
+          if (!cookie) return json(res, 400, { error: 'empty cookie' });
+          const snap = await runner.setCookie(provider, cookie);
+          // never echo the cookie back; return the resulting snapshot only
           return json(res, 200, snap);
         }
       }

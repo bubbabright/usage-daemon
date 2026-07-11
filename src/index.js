@@ -2,7 +2,7 @@
 // usage-daemon entry point. Loads config, registers compiled-in provider plugins,
 // wires the runner, and starts the localhost HTTP surface on 127.0.0.1:<port>.
 
-import { loadConfig, DEFAULT_PORT } from './config.js';
+import { loadConfig, DEFAULT_PORT, expandHome } from './config.js';
 import * as registry from './registry.js';
 import { Runner } from './runner.js';
 import { createServer } from './http.js';
@@ -24,7 +24,7 @@ async function main() {
     }
     const provider = registry.create(name);
     provider.configure?.(pcfg);
-    runner.add(provider);
+    runner.add(provider, { cookieFile: expandHome(pcfg.cookie_file) });
     console.error(`usage-daemon: provider '${name}' enabled (interval ${provider.intervalSeconds?.() ?? 300}s)`);
   }
 

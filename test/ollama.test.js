@@ -37,6 +37,23 @@ test('parse: no segments at 0% usage', () => {
   assert.deepEqual(segments, []);
 });
 
+test('parse: decimal pct (real pages report e.g. 0.4%)', () => {
+  const snippet = `
+    <div>Cloud usage <span class="capitalize">free</span></div>
+    <div aria-label="Session usage 0% used" data-time="2026-07-12T01:00:00Z"></div>
+    <div aria-label="Weekly usage 0.4% used" data-time="2026-07-13T00:00:00Z"></div>`;
+  const { windows } = parse(snippet);
+  assert.equal(windows.find((w) => w.id === 'session').pct, 0);
+  assert.equal(windows.find((w) => w.id === 'weekly').pct, 0.4);
+});
+
+test('parse: segments parse when usage > 0', () => {
+  const snippet = `Cloud usage <span class="capitalize">free</span>
+    <div data-usage-segment data-model="nemotron-3-nano:30b" data-requests="9"></div>`;
+  const { segments } = parse(snippet);
+  assert.deepEqual(segments, [{ model: 'nemotron-3-nano:30b', requests: 9 }]);
+});
+
 test('parse: logged-out page throws auth_expired', () => {
   assert.throws(() => parse('<html><body>please sign in</body></html>'), AuthExpiredError);
 });

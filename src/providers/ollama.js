@@ -28,8 +28,9 @@ export function parse(html) {
   const tierM = html.match(/capitalize"[^>]*>\s*([A-Za-z]+)\s*<\/span/);
   const tier = tierM ? tierM[1].toLowerCase() : 'unknown';
 
-  const sessM = html.match(/aria-label="Session usage (\d+)% used"/);
-  const weekM = html.match(/aria-label="Weekly usage (\d+)% used"/);
+  // pct may be a decimal on real pages (e.g. "0.4% used"), not just an integer.
+  const sessM = html.match(/aria-label="Session usage (\d+(?:\.\d+)?)% used"/);
+  const weekM = html.match(/aria-label="Weekly usage (\d+(?:\.\d+)?)% used"/);
 
   // reset timestamps: 1st data-time = session, 2nd = weekly.
   const times = [...html.matchAll(/data-time="([^"]+)"/g)].map((m) => m[1]);

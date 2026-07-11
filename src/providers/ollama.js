@@ -63,15 +63,21 @@ export function parse(html) {
   return { tier, windows, segments };
 }
 
+const DEFAULT_URL = 'https://ollama.com/settings';
+
 export function createProvider() {
   let cookie = null;
   let interval = 300;
+  // Endpoint is overridable (config `url` or $OLLAMA_USAGE_URL) so the full
+  // daemon->plugin->parse pipeline can be exercised against a local fixture.
+  let url = process.env.OLLAMA_USAGE_URL || DEFAULT_URL;
 
   return {
     name: 'ollama',
 
     configure(cfg = {}) {
       cookie = cfg.cookie ?? cookie;
+      if (cfg.url) url = cfg.url;
       if (cfg.interval_seconds) interval = Number(cfg.interval_seconds);
     },
 
@@ -81,7 +87,7 @@ export function createProvider() {
 
     async poll() {
       if (!cookie) throw new AuthExpiredError('no ollama cookie configured');
-      const res = await fetch('https://ollama.com/settings', {
+      const res = await fetch(url, {
         headers: {
           Cookie: cookie,
           // A browser-ish UA; the website (unlike the model API) gates on cookie,

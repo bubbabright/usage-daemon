@@ -1,20 +1,31 @@
-// Ollama Cloud usage provider plugin.
+// Ollama Cloud usage provider plugin — descriptor interface (HANDOFF-14).
 //
-// No JSON usage API exists — account usage is server-rendered HTML at
+// No JSON usage API — account usage is server-rendered HTML at
 // https://ollama.com/settings ("Usage" tab, htmx). Auth is the browser session
 // cookie, NOT the API key.
 //
 // parse() is a PURE function of the page HTML so it unit-tests against the
 // vendored fixture (test/fixtures/ollama-settings.html) with no network.
-// poll() adds the fetch + auth-expiry detection around it.
+// fetch() adds the fetch + auth-expiry detection around it.
 
 export const SESSION_COLOR = '#E69F00'; // Okabe-Ito orange (suite-wide)
-export const WEEKLY_COLOR = '#56B4E9'; // Okabe-Ito blue
+export const WEEKLY_COLOR = '#56B4E9';  // Okabe-Ito blue
+
+export const ID = 'ollama';
+export const LABEL = 'Ollama Cloud';
 
 export class AuthExpiredError extends Error {
   constructor(msg = 'ollama.com session expired') {
     super(msg);
     this.code = 'auth_expired';
+  }
+}
+
+export class RateLimitedError extends Error {
+  constructor(retryAfter = null) {
+    super('rate_limited');
+    this.code = 'rate_limited';
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -66,35 +77,27 @@ export function parse(html) {
 
 const DEFAULT_URL = 'https://ollama.com/settings';
 
-export function createProvider() {
+// Internal state for the plugin instance
+function createProvider() {
   let cookie = null;
-  let interval = 300;
-  // Endpoint is overridable (config `url` or $OLLAMA_USAGE_URL) so the full
-  // daemon->plugin->parse pipeline can be exercised against a local fixture.
-  let url = process.env.OLLAMA_USAGE_URL || DEFAULT_URL;
+  let url = DEFAULT_URL;
 
   return {
-    name: 'ollama',
+    id: ID,
+    label: LABEL,
+    auth: { kind: 'cookie' },
 
     configure(cfg = {}) {
-      cookie = cfg.cookie ?? cookie;
+      if (cfg.cookie) cookie = cfg.cookie;
       if (cfg.url) url = cfg.url;
-      if (cfg.interval_seconds) interval = Number(cfg.interval_seconds);
     },
 
-    intervalSeconds() {
-      return interval;
-    },
-
-    async poll() {
+    async fetch() {
       if (!cookie) throw new AuthExpiredError('no ollama cookie configured');
       const res = await fetch(url, {
         headers: {
           Cookie: cookie,
-          // A browser-ish UA; the website (unlike the model API) gates on cookie,
-          // but send a real UA to avoid bot heuristics.
-          'User-Agent':
-            'Mozilla/5.0 (X11; Linux x86_64) usage-daemon/0.1',
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) usage-daemon/0.1',
           Accept: 'text/html',
         },
         redirect: 'manual',
@@ -102,14 +105,15 @@ export function createProvider() {
       // 3xx to /signin (or any redirect) = logged out.
       if (res.status >= 300 && res.status < 400) throw new AuthExpiredError();
       if (res.status === 429) {
-        const err = new Error('rate_limited');
-        err.code = 'rate_limited';
-        err.retryAfter = Number(res.headers.get('retry-after')) || null;
-        throw err;
+        const retryAfter = Number(res.headers.get('retry-after')) || null;
+        throw new RateLimitedError(retryAfter);
       }
       if (!res.ok) throw new Error(`ollama.com HTTP ${res.status}`);
-      const html = await res.text();
-      return parse(html); // { tier, windows, segments }
+      return res.text();
     },
+
+    parse,
   };
 }
+
+export { createProvider };

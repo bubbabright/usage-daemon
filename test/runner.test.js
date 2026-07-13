@@ -10,23 +10,26 @@ process.env.XDG_STATE_HOME = path.join(tmp, 'state');
 
 const { Runner } = await import('../src/runner.js');
 
-// A stub provider: auth_expired until a cookie is configured, then returns usage.
+// A stub provider matching the new HANDOFF-14 interface: id, label, auth, fetch, parse
 function stubProvider() {
   let cookie = null;
   return {
-    name: 'stub',
+    id: 'stub',
+    label: 'Stub Provider',
+    auth: { kind: 'cookie' },
     configure(cfg = {}) {
       if (cfg.cookie) cookie = cfg.cookie;
     },
-    intervalSeconds() {
-      return 999;
-    },
-    async poll() {
+    async fetch() {
       if (!cookie) {
         const e = new Error('no cookie');
         e.code = 'auth_expired';
         throw e;
       }
+      // Return raw HTML-like string that parse() will handle
+      return 'Cloud usage <span class="capitalize">free</span>';
+    },
+    parse(raw) {
       return {
         tier: 'free',
         windows: [

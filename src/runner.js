@@ -17,12 +17,13 @@ const STATUS = {
 
 export class Runner {
   constructor() {
-    this.providers = new Map(); // name -> { provider, timer }
-    this.current = new Map(); // name -> snapshot
+    this.providers = new Map(); // name -> { provider, timer, cookieFile }
+    this.current = new Map();   // name -> snapshot
   }
 
   add(provider, meta = {}) {
-    this.providers.set(provider.name, {
+    const name = provider.id;
+    this.providers.set(name, {
       provider,
       timer: null,
       cookieFile: meta.cookieFile ?? null,
@@ -70,9 +71,9 @@ export class Runner {
     for (const { provider } of this.providers.values()) {
       const secs = provider.intervalSeconds?.() ?? 300;
       // poll once immediately, then on interval
-      this.poll(provider.name);
-      const entry = this.providers.get(provider.name);
-      entry.timer = setInterval(() => this.poll(provider.name), secs * 1000);
+      this.poll(provider.id);
+      const entry = this.providers.get(provider.id);
+      entry.timer = setInterval(() => this.poll(provider.id), secs * 1000);
       if (entry.timer.unref) entry.timer.unref();
     }
   }
@@ -91,7 +92,8 @@ export class Runner {
     const { provider } = entry;
     const t = Date.now();
     try {
-      const parsed = await provider.poll(); // { tier, windows, segments }
+      const raw = await provider.fetch();
+      const parsed = provider.parse(raw); // { tier, windows, segments }
       const history = await store.read(name);
       const windows = parsed.windows.map((w) => ({
         ...w,

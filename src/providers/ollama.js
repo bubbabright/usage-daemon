@@ -87,6 +87,19 @@ function createProvider() {
     label: LABEL,
     auth: { kind: 'cookie' },
 
+    config() {
+      return {
+        id: ID,
+        label: LABEL,
+        auth: { kind: 'cookie' },
+        windows: [
+          { id: 'session', label: 'Session', color: SESSION_COLOR },
+          { id: 'weekly', label: 'Weekly', color: WEEKLY_COLOR },
+        ],
+        tiers: ['free', 'pro'],
+      };
+    },
+
     configure(cfg = {}) {
       if (cfg.cookie) cookie = cfg.cookie;
       if (cfg.url) url = cfg.url;

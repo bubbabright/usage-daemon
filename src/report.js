@@ -2,9 +2,21 @@
 // report (which inlines a history snapshot), this fetches /usage/<provider>/history
 // live — exactly the one-line change the extensions' template anticipates.
 // Dependency-free canvas chart; no external assets (CSP-safe).
+//
+// windows: [{id, label, color}] from the provider config — determines table columns
+// and chart colors dynamically. No hardcoded window names.
 
-export function reportHtml(provider) {
+export function reportHtml(provider, windows) {
   const p = JSON.stringify(provider);
+  const w = JSON.stringify(windows);
+
+  const th = windows.map((win) =>
+    `<th class="w-${win.id}" style="color:${win.color}">${win.label} %</th>`
+  ).join('');
+  const css = windows.map((win) =>
+    `.w-${win.id} { color: ${win.color}; }`
+  ).join('\n  ');
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -19,28 +31,30 @@ export function reportHtml(provider) {
   table { border-collapse: collapse; margin-top: 1rem; width: 100%; }
   th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid #8883; font-variant-numeric: tabular-nums; }
   .muted { opacity: .6; }
-  .session { color: #E69F00; } .weekly { color: #56B4E9; }
+  ${css}
 </style>
 </head>
 <body>
 <h1>Usage report — <span style="text-transform:capitalize">${provider}</span></h1>
 <p class="muted" id="meta">loading…</p>
 <canvas id="c" width="880" height="280"></canvas>
-<table id="t"><thead><tr><th>Time</th><th class="session">Session %</th><th class="weekly">Weekly %</th></tr></thead><tbody></tbody></table>
+<table id="t"><thead><tr><th>Time</th>${th}</tr></thead><tbody></tbody></table>
 <script>
 const provider = ${p};
+const windows = ${w};
 async function main() {
   const rows = await fetch('/usage/' + provider + '/history').then(r => r.json());
   const meta = document.getElementById('meta');
   if (!rows.length) { meta.textContent = 'No history yet.'; return; }
   meta.textContent = rows.length + ' samples, ' +
-    new Date(rows[0].t).toLocaleString() + ' → ' + new Date(rows.at(-1).t).toLocaleString();
+    new Date(rows[0].t).toLocaleString() + ' ' + new Date(rows.at(-1).t).toLocaleString();
   draw(rows);
   const tb = document.querySelector('#t tbody');
   for (const r of rows.slice(-50).reverse()) {
+    let cells = '<td>' + new Date(r.t).toLocaleString() + '</td>';
+    for (const w of windows) cells += '<td>' + (r[w.id] ?? '') + '</td>';
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td>' + new Date(r.t).toLocaleString() + '</td><td>' +
-      (r.session ?? '') + '</td><td>' + (r.weekly ?? '') + '</td>';
+    tr.innerHTML = cells;
     tb.appendChild(tr);
   }
 }
@@ -52,12 +66,12 @@ function draw(rows) {
   const sy = v => H - pad - (H - 2*pad) * (v / 100);
   x.clearRect(0,0,W,H);
   x.strokeStyle = '#8886'; x.beginPath(); x.moveTo(pad,H-pad); x.lineTo(W-pad,H-pad); x.stroke();
-  for (const [key, color] of [['session','#E69F00'],['weekly','#56B4E9']]) {
-    x.strokeStyle = color; x.lineWidth = 2; x.beginPath();
+  for (const w of windows) {
+    x.strokeStyle = w.color; x.lineWidth = 2; x.beginPath();
     let started = false;
     for (const r of rows) {
-      if (typeof r[key] !== 'number') continue;
-      const px = sx(r.t), py = sy(r[key]);
+      if (typeof r[w.id] !== 'number') continue;
+      const px = sx(r.t), py = sy(r[w.id]);
       started ? x.lineTo(px, py) : x.moveTo(px, py); started = true;
     }
     x.stroke();

@@ -1,5 +1,6 @@
 // HTTP surface (localhost only). Routes:
 //   GET  /usage/providers            -> configured providers + status
+//   GET  /usage/:provider/config     -> provider metadata (windows, tiers, auth kind)
 //   GET  /usage/:provider/current    -> A2 snapshot
 //   GET  /usage/:provider/history    -> history rows
 //   POST /usage/:provider/refresh    -> force an immediate poll, return snapshot
@@ -63,7 +64,10 @@ export function createServer(runner) {
       if (url.pathname === '/' && method === 'GET') {
         const provider = url.searchParams.get('provider');
         if (!provider) return json(res, 400, { error: 'provider query required' });
-        const html = reportHtml(provider);
+        const entry = runner.providers.get(provider);
+        if (!entry) return json(res, 404, { error: 'unknown provider', provider });
+        const windows = entry.provider.config?.()?.windows ?? [];
+        const html = reportHtml(provider, windows);
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
           'content-length': Buffer.byteLength(html),
@@ -79,6 +83,12 @@ export function createServer(runner) {
         const provider = parts[1];
         const action = parts[2];
 
+        if (provider && action === 'config' && method === 'GET') {
+          const entry = runner.providers.get(provider);
+          if (!entry) return json(res, 404, { error: 'unknown provider', provider });
+          const c = entry.provider.config?.();
+          return json(res, 200, c ?? { error: 'no config' });
+        }
         if (provider && action === 'current' && method === 'GET') {
           const snap = runner.getCurrent(provider);
           if (!snap) return json(res, 404, { error: 'no snapshot yet', provider });

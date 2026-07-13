@@ -6,9 +6,41 @@ zero runtime dependencies. A **framework + runner**; each provider is a compiled
 
 ## Why a daemon
 
-Single poller (kills the duplicate-request 429 risk), owns auth + parsing + history +
-burn-rate, serves a provider-agnostic `windows[]` snapshot so one client + report serve
-every provider. Extensions become thin display clients.
+One poller kills the duplicate-request 429 risk. It owns auth, parsing, history,
+and burn-rate, and serves a provider-agnostic `windows[]` snapshot so one client
+and one report can serve every provider.
+
+The daemon is the **optional** hub of the two-direction usage system
+(`../README.md`), not a hard dependency:
+
+- **Direction 1, standalone exts.** Each per-provider GNOME ext (claude, grok, ollama)
+  works with **no daemon**: its own engine polls upstream directly. That's the common
+  case, one provider. When the daemon *is* running, a dual-mode ext can read it
+  instead of polling.
+- **Direction 2, unified ext + MCP.** For multi-provider power users: one ext presents
+  **any** provider the daemon publishes, and a **generic (provider-agnostic) MCP server**
+  exposes `get_usage(provider)` to *any* MCP client, not just Claude Code, not claude-only.
+
+## MCP server (generic): the orchestration control plane
+
+The daemon backs a thin MCP server over the same provider registry. It is **provider-agnostic**:
+any MCP client can query usage for any configured provider (claude, grok, ollama, future
+plugins) uniformly. Not coupled to Claude.
+
+**Core purpose: it's a control plane, not a dashboard.** Live cross-provider quota state is a
+**cost-aware inference-orchestration signal** for local infra: **LiteLLM, the olla LLM proxy,
+Celery batch queues**. It informs **when and which serverless GPU node to spin up** (RTX
+3000-series → 4000-series → H100 …), under one rule: **drain already-paid subscription/API quota
+first, use free/cheap pay-as-you-go inference next, and rent a bigger GPU only when necessary.**
+Waterfall dispatch:
+
+```
+already-paid subscription quota  →  free/cheap serverless  →  bigger GPU only when needed
+```
+
+This is consistent with my "never auto-spend quota to refresh a *status* token" rule: don't waste
+spend, but do route real work to capacity already paid for before renting more. (It generalizes the
+old Phase-2 "ROI scheduler" from one provider to the whole inference fleet.)
 
 ## Run
 
@@ -17,8 +49,9 @@ node src/index.js          # or: npm start
 npm test                   # fixture-driven unit tests (node:test)
 ```
 
-Config: `~/.config/usage-daemon/config.toml` (see `config.example.toml`). Missing = ollama
-enabled at 300s but no cookie → it reports `auth_expired` and keeps last-known (never blanks).
+Config: `~/.config/usage-daemon/config.toml` (see `config.example.toml`). If it's missing,
+ollama is enabled at 300s with no cookie, so it reports `auth_expired` and keeps last-known
+values (it never blanks).
 
 ## HTTP surface
 
@@ -33,9 +66,9 @@ enabled at 300s but no cookie → it reports `auth_expired` and keeps last-known
 
 ### Supplying the cookie
 
-Ollama's website auths on the browser **session cookie** (not the API key). Two ways
-to give it to the daemon — either way the **daemon owns it** (holds, persists to
-`cookie_file` at mode `0600`, and uses it; it is never returned by any endpoint):
+Ollama's website auths on the browser **session cookie** (not the API key). There are two
+ways to give it to the daemon; either way the **daemon owns it** (holds it, persists it to
+`cookie_file` at mode `0600`, and uses it; it's never returned by any endpoint):
 
 - **File:** paste it into the `cookie_file` from `config.toml` and restart.
 - **Endpoint** (what the GNOME extension prefs uses): `POST /usage/ollama/cookie`
@@ -46,7 +79,7 @@ to give it to the daemon — either way the **daemon owns it** (holds, persists 
 curl -X POST --data 'session=...; other=...' 127.0.0.1:8787/usage/ollama/cookie
 ```
 
-### Snapshot (the daemon↔client contract)
+### Snapshot (the daemon-to-client contract)
 
 ```json
 {
@@ -81,10 +114,81 @@ test/
   ollama.test.js parse + burnrate, against the real page fixture
 ```
 
+## Storage: aggregate SQLite (planned)
+
+The daemon will store **aggregate usage for all providers in one SQLite DB**. This
+**eliminates the extension's history size/perf limit**: the exts cap history at a ~20k-line
+JSONL ring buffer because they run in the **GNOME compositor thread** (unbounded history
+there means jank; see `../todo/done/HANDOFF-1-history-bounding.md`). The daemon is a
+**separate process**, so that ceiling doesn't apply. It can keep full history in SQLite,
+unbounded.
+
+(Current code: per-provider `history.jsonl` via `store.js`. This migrates to the aggregate
+SQLite store; the normalized `windows[]` snapshot stays the write contract.)
+
+**Future:** export to **Prometheus / Grafana / etc.** SQLite gives a clean query/export
+surface for time-series dashboards and alerting beyond the built-in HTML report.
+
+## Always-on service (LXC 24/7 + mobile)
+
+Running the daemon in an **LXC gives 24/7 collection independent of the daily-driver desktop**.
+A few consequences:
+
+- **Complete history, captures automated/background spend.** The desktop being off no longer
+  means a data gap. **Scheduled/automated consumers burn quota while you're away**: Claude
+  scheduled tasks, cron agents, background coworkers. An ext-only collector is asleep when that
+  runs, so it doesn't see that spend. (This isn't "ext-only is wrong." For a user with no
+  off-session automated consumers, the ext is already complete. The always-on daemon matters
+  precisely when such consumers exist.) Burn-rate and projection accuracy improve from having
+  no uptime holes and no invisible-consumer holes.
+- **Mobile use.** Usage is collected continuously and served beyond the GNOME panel + MCP.
+- **On-the-go dashboard via Tailscale.** Expose the dashboard over a **Tailscale** private mesh
+  for an all-providers view from your phone. Tailscale is also the clean answer to the
+  remote-bind security question: bind the daemon to the **Tailscale interface** (authenticated
+  private mesh) rather than a public `0.0.0.0` bind behind hand-rolled firewalling, so it's
+  reachable from your devices and invisible to LAN/internet.
+
+## Install / configure (planned)
+
+An **idempotent, interactive installer** (re-runnable, reconfigures in place, never
+double-installs). On each run it offers:
+
+1. **Update from GitHub**: pull the latest daemon.
+2. **Change providers**: enable/disable/configure which provider plugins run.
+3. **Change bind address**: default `127.0.0.1:8787` (localhost-only); set a LAN IP / `0.0.0.0`
+   for remote clients (e.g. a GNOME ext on another host pointing at the daemon in an LXC). This
+   is the knob that opens the remote-serving path, so pair it with LAN-only firewalling / access
+   control, since binding off localhost trades away the localhost-only safety posture.
+4. **Change autostart behavior**: enable/disable service autostart (systemd unit).
+5. **Serve health URL**: a health endpoint (e.g. for a dashboard / uptime check).
+6. **Serve MCP**: enable the generic, provider-agnostic MCP server.
+7. **Serve dashboard**: enable the HTML dashboard/report surface.
+
+Each toggle is independent and persists to config; re-running the installer just re-presents
+the current state for editing.
+
+### Config UX progression (planned)
+
+- **Early: manual config file + scp/ssh.** Advanced users can edit the config directly (and push
+  it over scp/ssh). This is available *before* the richer UIs, so nobody's blocked waiting on them.
+- **Later: full TUI and web GUI.** Both target the same config the installer/manual edit write.
+- **Web GUI, easy cookie copy-paste (key requirement).** Cookie entry is the real friction
+  point for cookie-auth providers (ollama, grok-weekly). The web GUI needs to make pasting a
+  session cookie trivial. (The daemon owns the cookie; see "Supplying the cookie" above.)
+
+> **Config format: TOML, decided (2026-07-13).** No YAML. Reasons, in order: (1) **no
+> indentation/whitespace footguns**, which matters most for the early hand-edit-over-ssh path;
+> you can't silently break structure with a bad tab. (2) **Zero-dep**: `config.js` already
+> hand-rolls a minimal TOML loader, and YAML would pull in `js-yaml` and break the daemon's
+> zero-runtime-dep stance. (3) **Cookie strings**: TOML literal strings (`'...'`) need no
+> escaping for the `; = : / +` characters in session cookies; YAML would need careful quoting.
+> (4) Explicit types, no YAML coercion traps (the "Norway problem"). YAML's one edge, familiarity,
+> is weak here since most config flows through the installer / TUI / web GUI anyway.
+
 ## Adding a provider
 
 1. `src/providers/<name>.js` exporting `createProvider()` → `{ name, configure, intervalSeconds, poll }`.
    `poll()` returns `{ tier, windows, segments }`; keep any HTML scrape in a **pure**
    `parse()` for fixture testing.
 2. `registry.register('<name>', createProvider)` in `index.js`.
-3. Enable it in config. No dynamic plugin loading — compiled in on purpose.
+3. Enable it in config. No dynamic plugin loading, it's compiled in on purpose.

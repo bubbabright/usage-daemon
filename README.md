@@ -192,3 +192,9 @@ the current state for editing.
    `parse()` for fixture testing.
 2. `registry.register('<name>', createProvider)` in `index.js`.
 3. Enable it in config. No dynamic plugin loading, it's compiled in on purpose.
+
+## Related projects
+
+- [claude-usage-extension](https://github.com/bubbabright/claude-usage-extension) — standalone, no daemon needed.
+- [grok-usage-extension](https://github.com/bubbabright/supergrok-usage-extension) — standalone, no daemon needed.
+- [ollama-cloud-usage-extension](https://github.com/bubbabright/ollama-cloud-usage-extension) — thin client, requires this daemon.

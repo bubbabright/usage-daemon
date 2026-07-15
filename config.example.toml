@@ -12,3 +12,20 @@ interval_seconds = 300
 cookie_file = "~/.config/usage-daemon/ollama.cookie"
 # ...or inline instead of a file:
 # cookie = "session=...; other=..."
+
+[providers.claude]
+enabled = true
+interval_seconds = 300
+# Reads ~/.claude/.credentials.json ($CLAUDE_CONFIG_DIR override respected)
+# directly -- the same OAuth token the Claude Code CLI uses. Daemon never
+# writes this file. No cookie needed.
+# credentials_path = "~/.claude/.credentials.json"  # optional override
+
+[providers.grok]
+enabled = true
+interval_seconds = 300
+# Reads ~/.grok/auth.json (the OAuth token the `grok` CLI manages, from
+# `grok login`) directly. Daemon never writes this file. Monthly comes from
+# cli-chat-proxy.grok.com/v1/billing; weekly SuperGrok % is auto-fetched from
+# grok.com's gRPC-web GetGrokCreditsConfig (best-effort). No cookie needed.
+# auth_path = "~/.grok/auth.json"  # optional override

@@ -10,7 +10,10 @@ import { createServer } from './http.js';
 // --- register providers (compiled-in) ---
 import { createProvider as createOllama } from './providers/ollama.js';
 registry.register('ollama', createOllama);
-// future: registry.register('claude', createClaude); register('grok', ...)
+import { createProvider as createClaude } from './providers/claude.js';
+registry.register('claude', createClaude);
+import { createProvider as createGrok } from './providers/grok.js';
+registry.register('grok', createGrok);
 
 async function main() {
   const cfg = await loadConfig();

@@ -50,6 +50,7 @@ export function parse(html) {
     {
       id: 'session',
       label: 'Session',
+      letter: 'Se', // ollama's "session" has no fixed duration (unlike claude's 5h) — no clean abbreviation yet
       pct: sessM ? Number(sessM[1]) : null,
       resets_at: times[0] ?? null,
       color: SESSION_COLOR,
@@ -58,6 +59,7 @@ export function parse(html) {
     {
       id: 'weekly',
       label: 'Weekly',
+      letter: 'Wk',
       pct: weekM ? Number(weekM[1]) : null,
       resets_at: times[1] ?? null,
       color: WEEKLY_COLOR,

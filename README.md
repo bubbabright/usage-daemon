@@ -2,7 +2,8 @@
 
 Localhost daemon that owns usage polling for the GNOME usage suite. **Node/JS**,
 zero runtime dependencies. A **framework + runner**; each provider is a compiled-in
-**plugin**. Ollama is the first provider. Binds `127.0.0.1:8787` only.
+**plugin**. Ollama and Claude Code are the first two providers. Binds
+`127.0.0.1:8787` only.
 
 ## Why a daemon
 
@@ -96,6 +97,11 @@ curl -X POST --data 'session=...; other=...' 127.0.0.1:8787/usage/ollama/cookie
 `status`: `ok | auth_expired | rate_limited | error`. On any error the daemon keeps the
 last-known `windows` and sets `stale:true`.
 
+All datetime fields (`resets_at`, `token_expires_at`) are normalized to the **host's local
+time zone** (the LXC/Docker container's TZ) as ISO-8601 with an explicit offset, e.g.
+`2026-07-31T20:00:00-04:00` — one representation regardless of what each upstream API emits
+(`src/time.js`). The instant is unchanged, so relative "resets in Xh" math is unaffected.
+
 ## Layout
 
 ```
@@ -110,8 +116,10 @@ src/
   report.js      self-contained HTML report (live-fetches history)
   providers/
     ollama.js    poll ollama.com/settings (cookie auth) + PURE parse(html)
+    claude.js    poll api.anthropic.com/api/oauth/usage (oauth-file auth) + PURE parse(json)
 test/
   ollama.test.js parse + burnrate, against the real page fixture
+  claude.test.js parse, against the real API response fixture
 ```
 
 ## Storage: aggregate SQLite (planned)

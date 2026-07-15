@@ -7,6 +7,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as store from './store.js';
 import { willDeplete } from './burnrate.js';
+import { toHostIso } from './time.js';
 
 const STATUS = {
   OK: 'ok',
@@ -95,10 +96,16 @@ export class Runner {
       const raw = await provider.fetch();
       const parsed = provider.parse(raw); // { tier, windows, segments }
       const history = await store.read(name);
-      const windows = parsed.windows.map((w) => ({
-        ...w,
-        will_deplete: willDeplete(history, w.id, w.pct, w.resets_at, t),
-      }));
+      const windows = parsed.windows.map((w) => {
+        const resets_at = toHostIso(w.resets_at); // one representation for all providers
+        return {
+          ...w,
+          resets_at,
+          will_deplete: willDeplete(history, w.id, w.pct, resets_at, t),
+        };
+      });
+      const meta = provider.meta?.() ?? {}; // optional hook; undefined for ollama today
+      if (meta.token_expires_at) meta.token_expires_at = toHostIso(meta.token_expires_at);
       const snapshot = {
         provider: name,
         t,
@@ -107,6 +114,7 @@ export class Runner {
         stale: false,
         windows,
         segments: parsed.segments ?? [],
+        ...meta,
       };
       this.current.set(name, snapshot);
       await store.append(name, snapshot);

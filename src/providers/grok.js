@@ -308,7 +308,9 @@ export function parse(raw) {
     will_deplete: false,
   };
 
-  return { tier: null, windows: [monthly, weekly], segments: [] };
+  // shorter-window-first, matching claude/ollama ([session, weekly]) — array
+  // order IS display order, no renderer sorts by duration.
+  return { tier: null, windows: [weekly, monthly], segments: [] };
 }
 
 function createProvider() {

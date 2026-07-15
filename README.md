@@ -5,6 +5,40 @@ zero runtime dependencies. A **framework + runner**; each provider is a compiled
 **plugin**. Ollama and Claude Code are the first two providers. Binds
 `127.0.0.1:8787` only.
 
+## Install / update
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bubbabright/usage-daemon/main/install.sh | bash
+```
+
+Idempotent — **the same command is how you update**: re-run it any time to pull the
+latest and restart. It clones (or `git pull --ff-only` on an existing install) into
+`~/.local/share/usage-daemon`, checks Node.js ≥ 20 is on `PATH`, writes a default
+`~/.config/usage-daemon/config.toml` on first run only (never overwrites an existing
+one), and sets up a `systemd --user` service so it survives reboots — or, on a host
+with no systemd `--user` session, just leaves the code in place and prints the
+manual run command (`node src/index.js`).
+
+Refuses to pull over local modifications (protects a from-source dev checkout run
+the same way) rather than silently discarding them.
+
+Prefer a local clone? `git clone https://github.com/bubbabright/usage-daemon.git &&
+cd usage-daemon && ./install.sh` does the same thing.
+
+> **If you're hacking on a checkout you run directly** (like this repo's own dev
+> setup), don't point `install.sh` at it — it always manages its own separate copy
+> under `~/.local/share/usage-daemon`. Wire your dev checkout to systemd by hand (see
+> the unit `install.sh` generates, above) so there's exactly one `usage-daemon`
+> process on port 8787 either way.
+
+`scripts/restart-daemon.sh` / `scripts/update-prod.sh` are a **different**,
+pidfile + `nohup`-based deploy path for pushing a dev checkout to a remote host over
+SSH (no systemd assumed) — don't run them against a host `install.sh` already set up,
+or you'll end up with two daemons fighting over the port.
+
+Full interactive installer (provider toggles, bind address, MCP/dashboard/health
+toggles) is still on the roadmap — see below.
+
 ## Why a daemon
 
 One poller kills the duplicate-request 429 risk. It owns auth, parsing, history,
@@ -156,12 +190,13 @@ A few consequences:
   private mesh) rather than a public `0.0.0.0` bind behind hand-rolled firewalling, so it's
   reachable from your devices and invisible to LAN/internet.
 
-## Install / configure (planned)
+## Full interactive installer (planned)
 
-An **idempotent, interactive installer** (re-runnable, reconfigures in place, never
-double-installs). On each run it offers:
+`install.sh` (above) covers install + update + systemd today. The rest of this
+**idempotent, interactive installer** (re-runnable, reconfigures in place, never
+double-installs) is still planned. On each run it will offer:
 
-1. **Update from GitHub**: pull the latest daemon.
+1. ~~**Update from GitHub**: pull the latest daemon.~~ — done, `install.sh`.
 2. **Change providers**: enable/disable/configure which provider plugins run.
 3. **Change bind address**: default `127.0.0.1:8787` (localhost-only); set a LAN IP / `0.0.0.0`
    for remote clients (e.g. a GNOME ext on another host pointing at the daemon in an LXC). This

@@ -131,6 +131,13 @@ curl -X POST --data 'session=...; other=...' 127.0.0.1:8787/usage/ollama/cookie
 `status`: `ok | auth_expired | rate_limited | error`. On any error the daemon keeps the
 last-known `windows` and sets `stale:true`.
 
+**`windows[]` array order IS display order** — no client sorts by duration (report.js,
+dashboard.js, multi-provider-extension all just `windows.map`/`forEach` in array order).
+Convention: **shorter-duration window first** — claude/ollama emit `[session, weekly]`;
+grok emits `[weekly, monthly]`. A provider's `parse()` must build the array in that order,
+not fetch/computation order (grok's monthly transport is fetched first but must still be
+placed *second* in the returned array).
+
 All datetime fields (`resets_at`, `token_expires_at`) are normalized to the **host's local
 time zone** (the LXC/Docker container's TZ) as ISO-8601 with an explicit offset, e.g.
 `2026-07-31T20:00:00-04:00` — one representation regardless of what each upstream API emits
@@ -235,6 +242,9 @@ the current state for editing.
    `parse()` for fixture testing.
 2. `registry.register('<name>', createProvider)` in `index.js`.
 3. Enable it in config. No dynamic plugin loading, it's compiled in on purpose.
+4. Order `windows[]` **shorter-duration first** — see the snapshot contract note above. Easy
+   to miss: grok shipped with it backwards ([monthly, weekly]) because that matched fetch
+   order, not display order — caught after it rendered wrong in multi-provider-extension.
 
 ## Related projects
 

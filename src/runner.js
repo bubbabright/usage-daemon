@@ -125,7 +125,19 @@ export class Runner {
   }
 
   // Keep last-known values, flag stale + status. Never blank.
-  _markStale(name, t, err) {
+  //
+  // `prev` only covers snapshots THIS process has produced — a daemon
+  // restart wipes it even though the provider may have years of good polls
+  // on disk. Without a disk fallback, a provider whose auth already expired
+  // *before* a restart (nothing to re-populate `current` with) renders as
+  // empty forever, even though store.js has its last-known percentages.
+  // Disk history rows are compact (`{t, tier, <window.id>: pct}`, no
+  // label/color/resets_at — see store.js historyRow), so windows rebuilt
+  // from disk borrow label/color from the provider's own static config()
+  // and leave resets_at null (the old value would be stale past meaning,
+  // not just imprecise) and will_deplete false (nothing to project from a
+  // single point).
+  async _markStale(name, t, err) {
     const prev = this.current.get(name);
     const status =
       err?.code === 'auth_expired'
@@ -133,14 +145,40 @@ export class Runner {
         : err?.code === 'rate_limited'
           ? STATUS.RATE_LIMITED
           : STATUS.ERROR;
+
+    let windows = prev?.windows ?? null;
+    let tier = prev?.tier ?? null;
+    let lastT = prev?.t ?? null;
+    if (windows == null) {
+      const history = await store.read(name);
+      const last = history[history.length - 1];
+      if (last) {
+        const entry = this.providers.get(name);
+        const cfgWindows = entry?.provider.config?.()?.windows ?? [];
+        const cfgById = new Map(cfgWindows.map((w) => [w.id, w]));
+        windows = Object.keys(last)
+          .filter((k) => k !== 't' && k !== 'tier')
+          .map((id) => ({
+            id,
+            label: cfgById.get(id)?.label ?? id,
+            pct: last[id],
+            resets_at: null,
+            color: cfgById.get(id)?.color ?? null,
+            will_deplete: false,
+          }));
+        tier = last.tier ?? tier;
+        lastT = last.t ?? lastT;
+      }
+    }
+
     const snapshot = {
       provider: name,
-      t: prev?.t ?? t, // keep the last *successful* timestamp if we have one
-      tier: prev?.tier ?? 'unknown',
+      t: lastT ?? t, // keep the last *successful* timestamp if we have one
+      tier: tier ?? 'unknown',
       status,
       stale: true,
       error: err?.message ?? String(err),
-      windows: prev?.windows ?? [],
+      windows: windows ?? [],
       segments: prev?.segments ?? [],
     };
     this.current.set(name, snapshot);

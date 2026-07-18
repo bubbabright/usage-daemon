@@ -18,7 +18,7 @@ function stubProvider() {
     label: 'Stub Provider',
     auth: { kind: 'cookie' },
     configure(cfg = {}) {
-      if (cfg.cookie) cookie = cfg.cookie;
+      if (cfg.cookie !== undefined) cookie = cfg.cookie;
     },
     async fetch() {
       if (!cookie) {
@@ -69,4 +69,19 @@ test('setCookie: empty cookie rejected', async () => {
   const runner = new Runner();
   runner.add(stubProvider(), { cookieFile: path.join(tmp, 'x.cookie') });
   await assert.rejects(() => runner.setCookie('stub', '   '), /empty cookie/);
+});
+
+test('clearCookie: removes cookie file, reconfigures plugin, re-polls to auth_expired', async () => {
+  const cookieFile = path.join(tmp, 'flush.cookie');
+  const runner = new Runner();
+  runner.add(stubProvider(), { cookieFile });
+
+  const ok = await runner.setCookie('stub', 'session=abc123');
+  assert.equal(ok.status, 'ok');
+  assert.equal(readFileSync(cookieFile, 'utf8'), 'session=abc123\n');
+
+  const flushed = await runner.clearCookie('stub');
+  assert.equal(flushed.status, 'auth_expired');
+  assert.equal(flushed.stale, true);
+  assert.throws(() => readFileSync(cookieFile, 'utf8'));
 });

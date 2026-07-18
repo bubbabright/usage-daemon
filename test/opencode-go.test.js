@@ -51,8 +51,8 @@ test('parse: resets_at derived from resetInSec relative to now', () => {
 
 test('parse: status!=="ok" window yields null pct', () => {
   const html = goHtml.replace(
-    'rollingUsage: { status: "ok", resetInSec: 5507, usagePercent: 6 }',
-    'rollingUsage: { status: "error", resetInSec: 5507, usagePercent: 6 }',
+    'rollingUsage:$R[33]={status:"ok",resetInSec:5507,usagePercent:6}',
+    'rollingUsage:$R[33]={status:"error",resetInSec:5507,usagePercent:6}',
   );
   const { windows } = parse(html);
   assert.equal(windows.find((w) => w.id === '5h').pct, null);

@@ -48,6 +48,23 @@ export class Runner {
     return this.poll(name);
   }
 
+  // Flush a stored cookie: delete the on-disk file (if any), clear the
+  // in-memory value on the live plugin instance, then poll immediately so
+  // the resulting snapshot reflects the cleared state (auth_expired) rather
+  // than the last-good one lingering until the next scheduled poll. The
+  // empty-string configure() only actually clears anything because provider
+  // configure() implementations check `!== undefined`, not truthiness — see
+  // the comment at each provider's own configure().
+  async clearCookie(name) {
+    const entry = this.providers.get(name);
+    if (!entry) throw new Error(`unknown provider: ${name}`);
+    if (entry.cookieFile) {
+      await fs.rm(entry.cookieFile, { force: true });
+    }
+    entry.provider.configure?.({ cookie: '' });
+    return this.poll(name);
+  }
+
   list() {
     return [...this.providers.keys()].map((name) => {
       const snap = this.current.get(name);

@@ -6,7 +6,8 @@
 //   GET  /usage/:provider/current    -> A2 snapshot
 //   GET  /usage/:provider/history    -> history rows
 //   POST /usage/:provider/refresh    -> force an immediate poll, return snapshot
-//   POST /usage/:provider/cookie     -> store session cookie (daemon owns it), re-poll
+//   POST   /usage/:provider/cookie   -> store session cookie (daemon owns it), re-poll
+//   DELETE /usage/:provider/cookie   -> flush stored cookie + file, re-poll (goes auth_expired)
 //   GET  /                           -> multi-provider dashboard (HANDOFF-17)
 //   GET  /?provider=ollama           -> self-contained HTML report
 
@@ -174,6 +175,10 @@ export function createServer(runner) {
           if (!cookie) return json(res, 400, { error: 'empty cookie' });
           const snap = await runner.setCookie(provider, cookie);
           // never echo the cookie back; return the resulting snapshot only
+          return json(res, 200, snap);
+        }
+        if (provider && action === 'cookie' && method === 'DELETE') {
+          const snap = await runner.clearCookie(provider);
           return json(res, 200, snap);
         }
       }

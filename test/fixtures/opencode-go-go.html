@@ -23,22 +23,25 @@
       <span>1% used</span>
     </div>
 
+    <!-- Shape matches a real captured page (2026-07-18), not a clean hand-
+         written guess: Solid's resumability wiring inserts a numbered
+         reference assignment between each key's colon and its object
+         literal down in the script below, and there is no plan/tier field
+         on this object at all on the real page -- tier falls back to the
+         code's own 'lite' default. An earlier version of this fixture
+         omitted both of those and passed while the real page 404'd on
+         parse (silently, as AuthExpiredError) in production. -->
     <script>
       window._$HY = window._$HY || {};
       window.$R = window.$R || [];
-      $R.push([
-        "lite.subscription.get",
-        ["wrk_01KX9539EQF6MYWDM1SMYBPS1E"],
-        {
-          mine: true,
-          useBalance: false,
-          region: ["us", "eu", "sg"],
-          plan: "lite",
-          rollingUsage: { status: "ok", resetInSec: 5507, usagePercent: 6 },
-          weeklyUsage: { status: "ok", resetInSec: 160294, usagePercent: 2 },
-          monthlyUsage: { status: "ok", resetInSec: 2621026, usagePercent: 1 },
-        },
-      ]);
+      $R[28]($R[18], $R[31]={
+        mine:!0,useBalance:!1,region:$R[32]=["us","eu","sg"],
+        rollingUsage:$R[33]={status:"ok",resetInSec:5507,usagePercent:6},
+        weeklyUsage:$R[34]={status:"ok",resetInSec:160294,usagePercent:2},
+        monthlyUsage:$R[35]={status:"ok",resetInSec:2621026,usagePercent:1}
+      });
+      $R[28]($R[20],$R[31]);
+      $R[28]($R[6],$R[36]=[$R[37]={id:"wrk_01KX9539EQF6MYWDM1SMYBPS1E",name:"Default"}]);
     </script>
   </body>
 </html>

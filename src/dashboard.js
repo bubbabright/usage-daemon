@@ -275,6 +275,7 @@ export function dashboardHtml() {
           '<textarea id="cookie-' + escapeHtml(id) + '" autocomplete="off" spellcheck="false" placeholder="name=value; …"></textarea>' +
           '<div class="actions">' +
             '<button type="button" class="primary cookie-send" data-id="' + escapeHtml(id) + '">Send to daemon</button>' +
+            '<button type="button" class="cookie-flush" data-id="' + escapeHtml(id) + '">Flush cookie</button>' +
           '</div>' +
           '<div class="auth-status" data-cookie-status="' + escapeHtml(id) + '"></div>' +
         '</div>'
@@ -379,6 +380,25 @@ export function dashboardHtml() {
               ? 'Daemon accepted the cookie — live usage now flowing.'
               : 'Daemon stored cookie; status: ' + (snap.status || 'unknown') + (snap.stale ? ' (stale)' : '');
           }
+          await load({ skipDiscovery: true });
+        } catch (e) {
+          if (st) st.textContent = 'Failed: ' + e.message;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+    root.querySelectorAll('.cookie-flush').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const st = root.querySelector('[data-cookie-status="' + id + '"]');
+        if (st) st.textContent = 'Flushing…';
+        btn.disabled = true;
+        try {
+          const res = await fetch('/usage/' + encodeURIComponent(id) + '/cookie', { method: 'DELETE' });
+          const snap = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(snap.error || ('HTTP ' + res.status));
+          if (st) st.textContent = 'Cookie flushed — provider will show auth_expired until a new one is sent.';
           await load({ skipDiscovery: true });
         } catch (e) {
           if (st) st.textContent = 'Failed: ' + e.message;

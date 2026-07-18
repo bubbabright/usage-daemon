@@ -276,7 +276,9 @@ function createProvider() {
     },
 
     configure(cfg = {}) {
-      if (cfg.cookie) cookie = cfg.cookie;
+      // !== undefined (not truthy) so configure({cookie:''}) can explicitly
+      // clear it — a flush action, not just "no change was requested".
+      if (cfg.cookie !== undefined) cookie = cfg.cookie;
       if (cfg.admin_key) adminKey = String(cfg.admin_key).trim();
       if (cfg.adminKey) adminKey = String(cfg.adminKey).trim();
     },

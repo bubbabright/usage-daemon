@@ -33,9 +33,16 @@ export class RateLimitedError extends Error {
 }
 
 // Pull a `<key>:{...}` object literal out of the hydration script and read
-// its fields by name (order in the source is not guaranteed).
+// its fields by name (order in the source is not guaranteed). Real pages
+// insert a Solid resumability reference between the key and the object
+// literal — `rollingUsage:$R[33]={status:"ok",...}`, not `rollingUsage:{...}`
+// — a hand-authored test fixture missed this and passed while the real page
+// never matched (confirmed live 2026-07-18: raw capture had `$R[33]=` etc,
+// parse() silently fell through to AuthExpiredError on a perfectly valid,
+// 200-status page). The optional group tolerates that token generically
+// (any `$R[<digits>]=`) without hardcoding a specific index.
 function extractWindow(html, key) {
-  const blockM = html.match(new RegExp(`${key}\\s*:\\s*\\{([^}]*)\\}`));
+  const blockM = html.match(new RegExp(`${key}\\s*:\\s*(?:\\$R\\[\\d+\\]=)?\\{([^}]*)\\}`));
   if (!blockM) return null;
   const body = blockM[1];
   const statusM = body.match(/status\s*:\s*"([^"]+)"/);
@@ -147,8 +154,17 @@ function createProvider() {
     },
 
     configure(cfg = {}) {
-      if (cfg.cookie) cookie = cfg.cookie;
-      if (cfg.workspace_id) workspaceId = cfg.workspace_id;
+      // !== undefined (not truthy) so configure({cookie:''}) can explicitly
+      // clear it — a flush action, not just "no change was requested".
+      if (cfg.cookie !== undefined) cookie = cfg.cookie;
+      // Accept either the bare id or a full workspace URL and pull the id
+      // out of it — matches CodexBar's CODEXBAR_OPENCODE_WORKSPACE_ID
+      // convention, one less thing for whoever configures this to get wrong
+      // copy-pasting straight from the browser's address bar.
+      if (cfg.workspace_id) {
+        const m = String(cfg.workspace_id).match(/wrk_[A-Za-z0-9]+/);
+        if (m) workspaceId = m[0];
+      }
     },
 
     async fetch() {

@@ -2,6 +2,10 @@
 // usage-daemon entry point. Loads config, registers compiled-in provider plugins,
 // wires the runner, and starts the localhost HTTP surface on 127.0.0.1:<port>.
 
+// IPv4-only outbound (must be first — before any provider fetch). Lab has no
+// working IPv6; dual-stack undici fetch times out on AAAA-bearing hosts.
+import './ipv4.js';
+
 import { loadConfig, DEFAULT_PORT, expandHome } from './config.js';
 import * as registry from './registry.js';
 import { Runner } from './runner.js';
@@ -14,6 +18,12 @@ import { createProvider as createClaude } from './providers/claude.js';
 registry.register('claude', createClaude);
 import { createProvider as createGrok } from './providers/grok.js';
 registry.register('grok', createGrok);
+// mistral registered but off by default (config enabled=false); enable in
+// config.toml when testing. Does not load unless enabled.
+import { createProvider as createMistral } from './providers/mistral.js';
+registry.register('mistral', createMistral);
+import { createProvider as createOpencodeGo } from './providers/opencode-go.js';
+registry.register('opencode-go', createOpencodeGo);
 
 async function main() {
   const cfg = await loadConfig();

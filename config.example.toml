@@ -29,3 +29,30 @@ interval_seconds = 300
 # cli-chat-proxy.grok.com/v1/billing; weekly SuperGrok % is auto-fetched from
 # grok.com's gRPC-web GetGrokCreditsConfig (best-effort). No cookie needed.
 # auth_path = "~/.grok/auth.json"  # optional override
+
+[providers.mistral]
+enabled = false
+interval_seconds = 300
+# Vibe free-tier meter (admin.mistral.ai tRPC billing.vibeUsage) uses the
+# browser SESSION COOKIE, not an inference API key — same model as ollama.
+# Copy from DevTools -> Application -> Cookies -> admin.mistral.ai:
+cookie_file = "~/.config/usage-daemon/mistral.cookie"
+# ...or inline:
+# cookie = "..."
+# Optional Admin-role API key for monthly_spend ($ vs cap). Member/Billing
+# keys 403. Daemon never writes this file; never calls POST /spend-limit.
+# admin_key_file = "~/.config/usage-daemon/mistral.admin.key"
+# admin_key = "..."
+
+[providers.opencode-go]
+enabled = false
+interval_seconds = 300
+# OpenCode Go's workspace "Go" page auths on the browser SESSION COOKIE.
+# Copy from DevTools -> Application -> Cookies -> opencode.ai (whole
+# "name=value; ..." header):
+cookie_file = "~/.config/usage-daemon/opencode-go.cookie"
+# ...or inline:
+# cookie = "auth=Fe26.2**...; ..."
+# Optional: pin the workspace id (wrk_...) shown in the dashboard URL. If
+# omitted, the daemon auto-discovers it from an authed page on first fetch.
+# workspace_id = "wrk_..."

@@ -2,6 +2,7 @@
 // Thin client of the same A2 contract as multi-provider-extension:
 //   GET /usage/providers, /usage/{id}/config, /usage/{id}/current
 // Branch only on auth.kind — never on provider name (HANDOFF-17).
+// Provider multi-select filters cards + Refresh all (URL ?p= + sessionStorage).
 // Daemon owns cookies/secrets; this page never stores or redisplay them.
 // Relative /usage/* URLs only (laptop / LXC / Docker same-origin).
 // Zero runtime deps; self-contained string like report.js.
@@ -14,14 +15,28 @@ export function dashboardHtml() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>usage-daemon</title>
 <style>
-  :root { color-scheme: light dark; --border: #8884; --muted: #888; --ok: #2e7d32; --warn: #e69f00; --bad: #c62828; --card: #8881; }
+  :root { color-scheme: light dark; --border: #8884; --muted: #888; --ok: #2e7d32; --warn: #e69f00; --bad: #c62828; --card: #8881; --chip: #56b4e933; }
   * { box-sizing: border-box; }
   body { font: 15px/1.45 system-ui, sans-serif; margin: 0; padding: 1rem 1.25rem 3rem; max-width: 960px; margin-inline: auto; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem 1.25rem; margin-bottom: 1rem; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem 1.25rem; margin-bottom: .75rem; }
   h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
   .muted { color: var(--muted); font-size: .9rem; }
   #banner { display: none; padding: .65rem .9rem; border-radius: 8px; background: #c6282822; border: 1px solid #c6282866; margin-bottom: 1rem; }
   #banner.show { display: block; }
+  #picker {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .65rem;
+    margin-bottom: 1rem; padding: .75rem .9rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+  }
+  #picker .picker-label { font-size: .85rem; color: var(--muted); margin-right: .25rem; }
+  #picker .picker-actions { display: flex; gap: .35rem; margin-left: auto; }
+  #picker .picker-actions button { font-size: .8rem; padding: .25rem .55rem; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .85rem; padding: .3rem .65rem; border-radius: 999px;
+    border: 1px solid var(--border); cursor: pointer; user-select: none; background: transparent;
+  }
+  .chip:has(input:checked) { background: var(--chip); border-color: #56b4e9; }
+  .chip input { margin: 0; accent-color: #56b4e9; }
   #grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
   @media (min-width: 640px) { #grid { grid-template-columns: 1fr 1fr; } }
   .card { border: 1px solid var(--border); border-radius: 10px; padding: 1rem; background: var(--card); }
@@ -57,19 +72,38 @@ export function dashboardHtml() {
 <header>
   <h1>usage-daemon</h1>
   <span class="muted" id="meta">loading…</span>
-  <button type="button" id="refresh-all" class="primary">Refresh all</button>
+  <button type="button" id="refresh-all" class="primary">Refresh selected</button>
 </header>
+<div id="picker" hidden>
+  <span class="picker-label">Providers</span>
+  <div id="picker-chips"></div>
+  <div class="picker-actions">
+    <button type="button" id="select-all">All</button>
+    <button type="button" id="select-none">None</button>
+  </div>
+</div>
 <div id="banner" role="alert"></div>
 <div id="empty">No providers enabled on this daemon host. Edit the daemon config.toml.</div>
 <div id="grid"></div>
 <script>
 (function () {
   const POLL_MS = 30000;
+  const STORAGE_KEY = 'usage-daemon.selectedProviders';
+  const SEEN_KEY = 'usage-daemon.seenProviders';
   const grid = document.getElementById('grid');
   const meta = document.getElementById('meta');
   const banner = document.getElementById('banner');
   const empty = document.getElementById('empty');
+  const picker = document.getElementById('picker');
+  const pickerChips = document.getElementById('picker-chips');
   let timer = null;
+  /** @type {string[]} */
+  let knownIds = [];
+  /** @type {Set<string>} */
+  let selected = new Set();
+  /** @type {Map<string, string>} id -> label */
+  let labels = new Map();
+  let selectionInitialized = false;
 
   function showBanner(msg) {
     if (!msg) { banner.classList.remove('show'); banner.textContent = ''; return; }
@@ -81,6 +115,113 @@ export function dashboardHtml() {
     const res = await fetch(path);
     if (!res.ok) throw new Error(path + ' → HTTP ' + res.status);
     return res.json();
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function parseQuerySelection() {
+    const raw = new URLSearchParams(location.search).get('p');
+    if (raw == null || raw === '') return null;
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+
+  function readSessionJson(key) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.map(String) : null;
+    } catch { return null; }
+  }
+
+  function writeSessionJson(key, arr) {
+    try { sessionStorage.setItem(key, JSON.stringify(arr)); } catch (_) {}
+  }
+
+  function persistSelection() {
+    const arr = [...selected];
+    writeSessionJson(STORAGE_KEY, arr);
+    writeSessionJson(SEEN_KEY, knownIds);
+    const url = new URL(location.href);
+    // Never touch ?provider= (that is the single-provider report route).
+    if (arr.length && knownIds.length && arr.length < knownIds.length) {
+      url.searchParams.set('p', arr.join(','));
+    } else {
+      url.searchParams.delete('p');
+    }
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+
+  /**
+   * Merge discovery with saved selection.
+   * - First load: query → session → all
+   * - Always auto-select ids never seen before (new daemon plugins)
+   * - User deselections are kept (seen but not selected)
+   */
+  function syncSelection(ids) {
+    const idSet = new Set(ids);
+    // First visit (no SEEN_KEY): treat current ids as already seen so ?p= / session
+    // partial selection is not force-filled. Later new plugins are not in SEEN_KEY.
+    const storedSeen = readSessionJson(SEEN_KEY);
+    const seenPrev = new Set(
+      storedSeen != null ? storedSeen : (selectionInitialized ? knownIds : ids)
+    );
+
+    if (!selectionInitialized) {
+      const fromQuery = parseQuerySelection();
+      const fromSession = readSessionJson(STORAGE_KEY);
+      let initial;
+      if (fromQuery) initial = fromQuery.filter((id) => idSet.has(id));
+      else if (fromSession) initial = fromSession.filter((id) => idSet.has(id));
+      else initial = [...ids];
+      selected = new Set(initial);
+      selectionInitialized = true;
+    } else {
+      for (const id of [...selected]) {
+        if (!idSet.has(id)) selected.delete(id);
+      }
+    }
+
+    for (const id of ids) {
+      if (!seenPrev.has(id)) selected.add(id);
+    }
+
+    knownIds = [...ids];
+    persistSelection();
+  }
+
+  function renderPicker() {
+    if (!knownIds.length) {
+      picker.hidden = true;
+      pickerChips.innerHTML = '';
+      return;
+    }
+    picker.hidden = false;
+    pickerChips.innerHTML = knownIds.map((id) => {
+      const label = labels.get(id) || id;
+      const checked = selected.has(id) ? ' checked' : '';
+      return (
+        '<label class="chip">' +
+          '<input type="checkbox" data-pick="' + escapeHtml(id) + '"' + checked + '>' +
+          '<span>' + escapeHtml(label) + '</span>' +
+        '</label>'
+      );
+    }).join('');
+    pickerChips.querySelectorAll('input[data-pick]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const id = input.getAttribute('data-pick');
+        if (input.checked) selected.add(id);
+        else selected.delete(id);
+        persistSelection();
+        load({ skipDiscovery: true });
+      });
+    });
   }
 
   function pctLabel(v) {
@@ -123,14 +264,6 @@ export function dashboardHtml() {
         '<div class="track"><div class="fill' + deplete + '" style="width:' + pct + '%;background:' + color + '"></div></div>' +
       '</div>'
     );
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
   }
 
   function authBlock(id, config, snap) {
@@ -201,7 +334,6 @@ export function dashboardHtml() {
         if (av) av.hidden = true;
       });
       img.addEventListener('error', () => { img.remove(); });
-      // re-trigger if cached
       if (img.complete && img.naturalWidth) img.dispatchEvent(new Event('load'));
     });
   }
@@ -213,7 +345,7 @@ export function dashboardHtml() {
         btn.disabled = true;
         try {
           await fetch('/usage/' + encodeURIComponent(id) + '/refresh', { method: 'POST' });
-          await load();
+          await load({ skipDiscovery: true });
         } catch (e) {
           showBanner('Refresh failed: ' + e.message);
         } finally {
@@ -241,13 +373,13 @@ export function dashboardHtml() {
           });
           const snap = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(snap.error || ('HTTP ' + res.status));
-          if (ta) ta.value = ''; // never retain — daemon owns it
+          if (ta) ta.value = '';
           if (st) {
             st.textContent = snap.status === 'ok'
               ? 'Daemon accepted the cookie — live usage now flowing.'
               : 'Daemon stored cookie; status: ' + (snap.status || 'unknown') + (snap.stale ? ' (stale)' : '');
           }
-          await load();
+          await load({ skipDiscovery: true });
         } catch (e) {
           if (st) st.textContent = 'Failed: ' + e.message;
         } finally {
@@ -257,22 +389,62 @@ export function dashboardHtml() {
     });
   }
 
-  async function load() {
+  /** Cache of last provider list rows for skipDiscovery reloads */
+  let lastList = [];
+
+  async function load(opts) {
+    const skipDiscovery = opts && opts.skipDiscovery;
     try {
-      const list = await getJson('/usage/providers');
+      let list = lastList;
+      if (!skipDiscovery || !list.length) {
+        list = await getJson('/usage/providers');
+        lastList = list;
+      }
       showBanner('');
+
       if (!list.length) {
         grid.innerHTML = '';
+        empty.textContent = 'No providers enabled on this daemon host. Edit the daemon config.toml.';
         empty.classList.add('show');
+        picker.hidden = true;
         meta.textContent = '0 providers';
+        knownIds = [];
+        selected = new Set();
+        return;
+      }
+
+      const ids = list.map((row) => row.provider);
+
+      // Resolve labels for picker (config is cheap + needed for cards too)
+      const configs = new Map();
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const c = await getJson('/usage/' + encodeURIComponent(id) + '/config');
+          configs.set(id, c);
+          if (c?.label) labels.set(id, c.label);
+          else labels.set(id, id);
+        } catch (_) {
+          labels.set(id, id);
+        }
+      }));
+
+      syncSelection(ids);
+      renderPicker();
+
+      const visible = ids.filter((id) => selected.has(id));
+      if (!visible.length) {
+        grid.innerHTML = '';
+        empty.textContent = 'Select at least one provider above.';
+        empty.classList.add('show');
+        meta.textContent = '0 of ' + ids.length + ' selected';
         return;
       }
       empty.classList.remove('show');
 
-      const cards = await Promise.all(list.map(async (row) => {
-        const id = row.provider;
-        let config = null, snap = null;
-        try { config = await getJson('/usage/' + encodeURIComponent(id) + '/config'); } catch (_) {}
+      const cards = await Promise.all(visible.map(async (id) => {
+        const row = list.find((r) => r.provider === id) || {};
+        const config = configs.get(id) || null;
+        let snap = null;
         try { snap = await getJson('/usage/' + encodeURIComponent(id) + '/current'); } catch (_) {
           snap = { status: row.status, stale: row.stale, t: row.t, windows: [] };
         }
@@ -282,21 +454,32 @@ export function dashboardHtml() {
       grid.innerHTML = cards.join('');
       wireIcons(grid);
       wireActions(grid);
-      meta.textContent = list.length + ' provider' + (list.length === 1 ? '' : 's') +
-        ' · updated ' + new Date().toLocaleTimeString();
+      meta.textContent = visible.length + ' of ' + ids.length + ' selected · updated ' +
+        new Date().toLocaleTimeString();
     } catch (e) {
       showBanner('Cannot reach daemon API: ' + e.message);
       meta.textContent = 'offline';
     }
   }
 
+  document.getElementById('select-all').addEventListener('click', () => {
+    selected = new Set(knownIds);
+    persistSelection();
+    renderPicker();
+    load({ skipDiscovery: true });
+  });
+  document.getElementById('select-none').addEventListener('click', () => {
+    selected = new Set();
+    persistSelection();
+    renderPicker();
+    load({ skipDiscovery: true });
+  });
+
   document.getElementById('refresh-all').addEventListener('click', async () => {
-    try {
-      const list = await getJson('/usage/providers');
-      await Promise.all(list.map((row) =>
-        fetch('/usage/' + encodeURIComponent(row.provider) + '/refresh', { method: 'POST' }).catch(() => null)
-      ));
-    } catch (_) {}
+    const ids = [...selected];
+    await Promise.all(ids.map((id) =>
+      fetch('/usage/' + encodeURIComponent(id) + '/refresh', { method: 'POST' }).catch(() => null)
+    ));
     await load();
   });
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Go · OpenCode</title>
+  </head>
+  <body>
+    <div data-component="header-section">
+      <h1>OpenCode Go</h1>
+      <span class="capitalize">lite</span>
+    </div>
+
+    <div data-slot="usage-item">
+      <span>5 Hour</span>
+      <span>6% used</span>
+    </div>
+    <div data-slot="usage-item">
+      <span>Weekly</span>
+      <span>2% used</span>
+    </div>
+    <div data-slot="usage-item">
+      <span>Monthly</span>
+      <span>1% used</span>
+    </div>
+
+    <script>
+      window._$HY = window._$HY || {};
+      window.$R = window.$R || [];
+      $R.push([
+        "lite.subscription.get",
+        ["wrk_01KX9539EQF6MYWDM1SMYBPS1E"],
+        {
+          mine: true,
+          useBalance: false,
+          region: ["us", "eu", "sg"],
+          plan: "lite",
+          rollingUsage: { status: "ok", resetInSec: 5507, usagePercent: 6 },
+          weeklyUsage: { status: "ok", resetInSec: 160294, usagePercent: 2 },
+          monthlyUsage: { status: "ok", resetInSec: 2621026, usagePercent: 1 },
+        },
+      ]);
+    </script>
+  </body>
+</html>

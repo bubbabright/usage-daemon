@@ -75,7 +75,7 @@ export async function loadConfig() {
     providers: { ...DEFAULTS.providers, ...(parsed.providers || {}) },
   };
 
-  // resolve each provider's cookie from cookie_file if not inline.
+  // resolve each provider's cookie / admin_key from *_file if not inline.
   for (const [name, pcfg] of Object.entries(cfg.providers)) {
     if (!pcfg.cookie && pcfg.cookie_file) {
       try {
@@ -84,6 +84,15 @@ export async function loadConfig() {
         ).trim();
       } catch {
         // leave unset -> provider reports auth_expired until cookie exists.
+      }
+    }
+    if (!pcfg.admin_key && pcfg.admin_key_file) {
+      try {
+        pcfg.admin_key = (
+          await fs.readFile(expandHome(pcfg.admin_key_file), 'utf8')
+        ).trim();
+      } catch {
+        // optional Admin path — vibe-only still works without it.
       }
     }
     cfg.providers[name] = pcfg;
